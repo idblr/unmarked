@@ -2,7 +2,7 @@
 #  This function estimates the standard occupancy model of MacKenzie et al (2002).
 
 occu <- function(formula, data, knownOcc = numeric(0), starts, method = "BFGS", 
-	control = list(), se = TRUE)
+	control = list(), se = TRUE, firth = FALSE, correct = NULL)
 {
 	if(!is(data, "unmarkedFrameOccu")) stop("Data is not an unmarkedFrameOccu object.")
 		
@@ -34,6 +34,31 @@ occu <- function(formula, data, knownOcc = numeric(0), starts, method = "BFGS",
 	yvec <- as.numeric(t(y))
 	navec <- is.na(yvec)
 	nd <- ifelse(rowSums(y,na.rm=TRUE) == 0, 1, 0) # no det at site i indicator
+	
+	if  (firth == TRUE) {  
+	  nll <- function(params){
+	    
+	    if (is.null(correct)) correct <- 0.5
+	    
+	    ## Calculate psi: (1/(1 + exp( - x %*% beta - offset)))
+	    psi <- plogis(X %*% params[1:nOP] + X.offset)
+	    psi[knownOccLog] <- 1
+	    pvec <- plogis(V %*% params[(nOP + 1):nP] + V.offset)
+	    cp <- (pvec^yvec) * ((1 - pvec)^(1 - yvec))
+	    cp[navec] <- 1
+	    cpmat <- matrix(cp, M, J, byrow = TRUE)
+	    
+	    ##Calculate Log-Likelihood: sum(y * log(psi) + (1 - y) * log(1 - psi)) 
+	    loglik <- sum(log(rowProds(cpmat) * psi + nd * (1 - psi)))
+	    
+	    ## Firth Penalized Maximum Likelihood ##
+	    psi <- as.vector(psi)
+	    XW2 <- crossprod(X, diag(psi * (1 - psi))^0.5)    ## X' (W ^ 1/2) 
+	    Fisher <- crossprod(t(XW2))                       ## X' W  X
+	    loglik <- loglik + correct * determinant(Fisher)$modulus[1] 
+	    -(loglik)
+	  }
+	} else { 
 
 	nll <- function(params) {
 		psi <- plogis(X %*% params[1 : nOP] + X.offset)
@@ -44,6 +69,7 @@ occu <- function(formula, data, knownOcc = numeric(0), starts, method = "BFGS",
 		cpmat <- matrix(cp, M, J, byrow = TRUE) # put back into matrix to multiply appropriately
 		loglik <- log(rowProds(cpmat) * psi + nd * (1 - psi))
 		-sum(loglik)
+	}
 	}
 
 	if(missing(starts)) starts <- rep(0, nP)	#rnorm(nP)

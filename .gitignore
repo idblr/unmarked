@@ -4,3 +4,4 @@
 runit
 bc
 .Rhistory
+*.DS_Store
